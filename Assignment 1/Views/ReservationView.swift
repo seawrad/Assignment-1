@@ -1,28 +1,27 @@
 //
-//  ReservationView.swift
+//  ReservationsView.swift
 //  Assignment 1
 //
 //  Created by f2239480 on 29/9/2025.
 //
 
 import SwiftUI
-import Combine
 
 struct ReservationsView: View {
     @StateObject private var viewModel = ReservationsViewModel()
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
-        NavigationView {
-            List(viewModel.reservations) { reservation in
+        List {
+            ForEach(viewModel.reservedEquipments) { equipment in
                 VStack(alignment: .leading) {
-                    Text("Equipment ID: \(reservation.equipmentId)")
+                    Text(equipment.name)
                         .font(.headline)
-                    Text("Reserved: \(reservation.reservedAt)")
+                    Text(equipment.description)
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Button("Unreserve") {
-                        viewModel.unreserve(reservation)
+                        viewModel.unreserve(equipment)
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
@@ -30,50 +29,74 @@ struct ReservationsView: View {
                 }
                 .padding(.vertical, 4)
             }
-            .refreshable {
-                viewModel.loadReservations()
-            }
-            .navigationTitle("My Reservations")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+            if viewModel.hasMore {
+                Color.clear
+                    .onAppear {
+                        viewModel.loadMore()
+                    }
                 }
+            if viewModel.isLoading {
+                ProgressView("Loading more...")
+                    .frame(maxWidth: .infinity)
+                    .padding()
             }
-            .onAppear {
-                viewModel.loadReservations()
-            }
+        }
+        .refreshable {
+            viewModel.loadInitial()
+        }
+        .navigationTitle("My Reservations")
+        .onAppear {
+            viewModel.loadInitial()
         }
     }
 }
 
 class ReservationsViewModel: ObservableObject {
-    @Published var reservations: [Reservation] = []
+    @Published var reservedEquipments: [Equipment] = []
     @Published var isLoading = false
+    @Published var hasMore = true
+    private var currentPage = 1
     private let apiClient = APIClient.shared
     
-    func loadReservations() {
+    func loadInitial() {
+        currentPage = 1
+        reservedEquipments = []
+        hasMore = true
+        loadMore()
+    }
+    
+    func loadMore() {
+        guard !isLoading, hasMore else { return }
         isLoading = true
-        apiClient.fetchUserReservations { [weak self] resvs, error in
+        apiClient.fetchUserReservedEquipments(page: currentPage) { [weak self] response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 if let error = error {
                     print("Error: \(error.localizedDescription)")
+                    return
                 }
-                self?.reservations = resvs ?? []
+                if let response = response {
+                    self?.reservedEquipments.append(contentsOf: response.equipments)
+                    let loaded = response.page * response.perPage
+                    self?.hasMore = loaded < response.total
+                    self?.currentPage += 1
+                } else {
+                    self?.hasMore = false
+                }
             }
         }
     }
     
-    func unreserve(_ reservation: Reservation) {
+    func unreserve(_ equipment: Equipment) {
         isLoading = true
-        apiClient.unreserveEquipment(equipmentId: reservation.equipmentId) { [weak self] success, error in
+        apiClient.unreserveEquipment(equipmentId: equipment.id) { [weak self] success, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 if let error = error {
                     print("Error: \(error.localizedDescription)")
                 }
                 if success {
-                    self?.reservations.removeAll { $0.equipmentId == reservation.equipmentId }
+                    self?.reservedEquipments.removeAll { $0.id == equipment.id }
                 }
             }
         }

@@ -9,13 +9,12 @@ import SwiftUI
 
 struct EquipmentDetailView: View {
     let equipment: Equipment
-    let isLoggedIn: Bool
-    @State private var isReserved = false  // Track local state; fetch from API in prod
+    @ObservedObject var apiClient = APIClient.shared
+    @State private var isReserved = false
     @State private var isLoading = false
     @State private var showingAlert = false
     @State private var alertMessage = ""
-    private let apiClient = APIClient.shared
-    
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -26,6 +25,15 @@ struct EquipmentDetailView: View {
                 Text(equipment.description)
                     .font(.body)
                     .padding(.bottom, 8)
+                
+                if let imageURL = equipment.image, let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    } placeholder: {
+                        ProgressView()
+                    }
+                    .frame(height: 200)
+                }
                 
                 HStack {
                     Label("Location", systemImage: "mappin")
@@ -51,7 +59,7 @@ struct EquipmentDetailView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                if isLoggedIn {
+                if !apiClient.token.isEmpty {
                     Button(isReserved ? "Unreserve" : "Reserve") {
                         toggleReserve()
                     }
@@ -68,10 +76,13 @@ struct EquipmentDetailView: View {
         }
         .navigationTitle("Details")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Error", isPresented: $showingAlert) {
+        .alert("Message", isPresented: $showingAlert) {
             Button("OK") { }
         } message: {
             Text(alertMessage)
+        }
+        .onAppear {
+            isReserved = apiClient.reservedIds.contains(equipment.id)
         }
     }
     
@@ -89,22 +100,20 @@ struct EquipmentDetailView: View {
     }
     
     private func handleToggle(success: Bool, error: Error?, action: String) {
-        DispatchQueue.main.async {
-            isLoading = false
-            if let error = error {
-                alertMessage = "Failed to \(action): \(error.localizedDescription)"
-                showingAlert = true
-                return
-            }
-            if success {
-                isReserved.toggle()
-                alertMessage = "Successfully \(action)d!"
-                showingAlert = true
-            }
+        isLoading = false
+        if let error = error {
+            alertMessage = "Failed to \(action): \(error.localizedDescription)"
+            showingAlert = true
+            return
+        }
+        if success {
+            isReserved.toggle()
+            alertMessage = "Successfully \(action)d!"
+            showingAlert = true
         }
     }
 }
 
 #Preview {
-    EquipmentDetailView(equipment: Equipment(id: 1, name: "Sample", description: "Desc", location: "Street", createdAt: "2025-01-01", modifiedAt: "2025-01-01"), isLoggedIn: true)
+    EquipmentDetailView(equipment: Equipment(id: "1", name: "Sample", description: "Desc", location: "Street", createdAt: "2025-01-01", modifiedAt: "2025-01-01", image: nil, color: nil, highlight: nil))
 }

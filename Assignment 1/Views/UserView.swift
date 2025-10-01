@@ -6,99 +6,64 @@
 //
 
 import SwiftUI
-import Combine
 
 struct UserView: View {
-    @StateObject private var viewModel = UserViewModel()
+    @ObservedObject private var apiClient = APIClient.shared
+    @State private var user: User? = nil
     @State private var showingLogin = false
     @State private var showingReservations = false
-    @State private var isRegisterMode = false
+
+    var isLoggedIn: Bool {
+        !apiClient.token.isEmpty
+    }
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                if let user = viewModel.user {
-                    VStack(spacing: 8) {
-                        Image(systemName: "person.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundColor(.blue)
-                        Text(user.name)
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        Text(user.email)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        if let department = user.department {
-                            Text(department)
-                                .font(.caption)
+            if isLoggedIn {
+                List {
+                    Section(header: Text("User Information")) {
+                        Text("Name: \(user?.name ?? "Unknown")")
+                        Text("Email: \(user?.email ?? "Unknown")")
+                        if let department = user?.department {
+                            Text("Department: \(department)")
+                        }
+                        if let remark = user?.remark {
+                            Text("Remark: \(remark)")
                         }
                     }
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(16)
-                    .shadow(radius: 4)
                     
                     Button("View Reservations") {
                         showingReservations = true
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
                     
                     Button("Logout") {
-                        viewModel.logout()
+                        apiClient.logout()
+                        user = nil
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                } else {
-                    VStack(spacing: 16) {
-                        Text("Welcome")
-                            .font(.title)
-                            .fontWeight(.semibold)
-                        Button("Login") {
-                            isRegisterMode = false
-                            showingLogin = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        
-                        Button("Register") {
-                            isRegisterMode = true
-                            showingLogin = true
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.green)
-                    }
+                    .foregroundColor(.red)
                 }
-            }
-            .padding()
-            .navigationTitle("User")
-            .sheet(isPresented: $showingLogin) {
-                LoginRegisterView(onSuccess: viewModel.onAuthSuccess)
-            }
-            .sheet(isPresented: $showingReservations) {
-                ReservationsView()
+                .navigationTitle("User Profile")
+            } else {
+                VStack {
+                    Text("Please log in or register to access reservations.")
+                        .multilineTextAlignment(.center)
+                        .padding()
+                    Button("Login / Register") {
+                        showingLogin = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .navigationTitle("User")
             }
         }
-    }
-}
-
-class UserViewModel: ObservableObject {
-    @Published var user: User?
-    private let apiClient = APIClient.shared
-
-    init() {
-        if !apiClient.token.isEmpty {
-            user = nil // Fetch via /api/users/{id} if you store user ID
+        .sheet(isPresented: $showingLogin) {
+            LoginRegisterView(isPresented: $showingLogin, onSuccess: { newUser in
+                user = newUser
+            })
         }
-    }
-
-    func onAuthSuccess(_ user: User) {
-        self.user = user
-    }
-
-    func logout() {
-        apiClient.logout()
-        user = nil
+        .sheet(isPresented: $showingReservations) {
+            ReservationsView()
+        }
     }
 }
 

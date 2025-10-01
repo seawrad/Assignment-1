@@ -13,7 +13,6 @@ struct User: Codable {
     let email: String
     let department: String?
     let remark: String?
-    // Add color if API supports
 }
 
 struct LoginRequest: Codable {
@@ -32,11 +31,4 @@ struct RegisterRequest: Codable {
 struct AuthResponse: Codable {
     let token: String
     let user: User
-}
-
-struct Reservation: Identifiable, Codable {
-    let id: Int
-    let equipmentId: Int
-    let userId: Int
-    let reservedAt: String
 }

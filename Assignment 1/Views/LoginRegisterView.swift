@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct LoginRegisterView: View {
-    @Environment(\.dismiss) private var dismiss
+    @Binding var isPresented: Bool
     @State private var email = ""
     @State private var password = ""
     @State private var name = ""
@@ -22,84 +22,70 @@ struct LoginRegisterView: View {
     private let apiClient = APIClient.shared
     
     var body: some View {
-        NavigationView {
-            Form {
+        Form {
+            if isRegister {
+                TextField("Name", text: $name)
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                SecureField("Password", text: $password)
+                TextField("Department (optional)", text: $department)
+                TextField("Remark (optional)", text: $remark)
+            } else {
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                SecureField("Password", text: $password)
+            }
+            
+            Button(isRegister ? "Register" : "Login") {
+                isLoading = true
                 if isRegister {
-                    TextField("Name", text: $name)
-                    TextField("Email", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                    SecureField("Password", text: $password)
-                    TextField("Department (optional)", text: $department)
-                    TextField("Remark (optional)", text: $remark)
+                    let request = RegisterRequest(name: name, email: email, password: password, department: department.isEmpty ? nil : department, remark: remark.isEmpty ? nil : remark)
+                    apiClient.register(user: request) { response, error in
+                        handleAuthResponse(response, error)
+                    }
                 } else {
-                    TextField("Email", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                    SecureField("Password", text: $password)
-                }
-                
-                Button(isRegister ? "Register" : "Login") {
-                    isLoading = true
-                    if isRegister {
-                        let request = RegisterRequest(name: name, email: email, password: password, department: department.isEmpty ? nil : department, remark: remark.isEmpty ? nil : remark)
-                        apiClient.register(user: request) { response, error in
-                            handleAuthResponse(response, error)
-                        }
-                    } else {
-                        apiClient.login(email: email, password: password) { response, error in
-                            handleAuthResponse(response, error)
-                        }
+                    apiClient.login(email: email, password: password) { response, error in
+                        handleAuthResponse(response, error)
                     }
                 }
-                .disabled(email.isEmpty || password.isEmpty || (isRegister && name.isEmpty))
-                .buttonStyle(.borderedProminent)
-                .tint(isRegister ? .green : .blue)
-                
-                Button(isRegister ? "Switch to Login" : "Switch to Register") {
-                    isRegister.toggle()
-                    // Clear fields on switch
-                    if isRegister { name = ""; department = ""; remark = "" }
-                    else { name = ""; department = ""; remark = "" }
-                }
-                .buttonStyle(.bordered)
             }
-            .navigationTitle(isRegister ? "Register" : "Login")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancel") { dismiss() }
-                }
+            .disabled(email.isEmpty || password.isEmpty || (isRegister && name.isEmpty))
+            .buttonStyle(.borderedProminent)
+            .tint(isRegister ? .green : .blue)
+            
+            Button(isRegister ? "Switch to Login" : "Switch to Register") {
+                isRegister.toggle()
             }
-            .alert("Error", isPresented: $showingError) {
-                Button("OK") { }
-            } message: {
-                Text(errorMessage)
-            }
-            .overlay {
-                if isLoading {
-                    ProgressView()
-                }
+            .buttonStyle(.bordered)
+        }
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
+        }
+        .overlay {
+            if isLoading {
+                ProgressView()
             }
         }
     }
     
     private func handleAuthResponse(_ response: AuthResponse?, _ error: Error?) {
-        DispatchQueue.main.async {
-            isLoading = false
-            if let error = error {
-                errorMessage = error.localizedDescription
-                showingError = true
-                return
-            }
-            if let response = response {
-                onSuccess(response.user)
-                dismiss()
-            }
+        isLoading = false
+        if let error = error {
+            errorMessage = error.localizedDescription
+            showingError = true
+            return
+        }
+        if let response = response {
+            onSuccess(response.user)
+            isPresented = false
         }
     }
 }
 
 #Preview {
-    LoginRegisterView(onSuccess: { _ in })
+    LoginRegisterView(isPresented: .constant(true), onSuccess: { _ in })
 }

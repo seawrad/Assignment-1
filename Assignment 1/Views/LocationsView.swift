@@ -8,37 +8,64 @@
 import SwiftUI
 
 struct LocationsView: View {
+    @State private var locations: [Location] = []
     @State private var selectedLocation: Location? = nil
     @State private var equipments: [Equipment] = []
+    @State private var currentPage = 1
+    @State private var hasMore = true
     @State private var isLoading = false
     @State private var showingAlert = false
     @State private var alertMessage = ""
     private let apiClient = APIClient.shared
-    let locations = Location.all
 
     var body: some View {
         NavigationView {
             if let selectedLocation = selectedLocation {
-                EquipmentListView(equipments: equipments, isLoggedIn: !apiClient.token.isEmpty, location: selectedLocation.name, onLoadMore: loadMoreForLocation)
-                    .navigationTitle(selectedLocation.name)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Back to Locations") {
-                                self.selectedLocation = nil
-                                equipments = []
-                            }
-                            .font(.subheadline)
+                List {
+                    ForEach(equipments) { equipment in
+                        NavigationLink(destination: EquipmentDetailView(equipment: equipment)) {
+                            EquipmentRow(equipment: equipment)
                         }
                     }
-                    .alert("Error", isPresented: $showingAlert) {
-                        Button("OK") { }
-                    } message: {
-                        Text(alertMessage)
+                    if hasMore {
+                        Color.clear
+                            .onAppear {
+                                loadMoreForLocation()
+                            }
                     }
-                    .onAppear {
-                        loadInitialForLocation(selectedLocation)
+                    if isLoading {
+                        ProgressView("Loading more...")
+                            .frame(maxWidth: .infinity)
+                            .padding()
                     }
+                }
+                .navigationTitle(selectedLocation.name)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Back to Locations") {
+                            self.selectedLocation = nil
+                            equipments = []
+                            currentPage = 1
+                            hasMore = true
+                        }
+                    }
+                }
+                .refreshable {
+                    currentPage = 1
+                    equipments = []
+                    hasMore = true
+                    loadMoreForLocation()
+                }
+                .alert("Error", isPresented: $showingAlert) {
+                    Button("OK") { }
+                } message: {
+                    Text(alertMessage)
+                }
+                .onAppear {
+                    if equipments.isEmpty {
+                        loadMoreForLocation()
+                    }
+                }
             } else {
                 List(locations) { location in
                     Button(action: {
@@ -48,62 +75,49 @@ struct LocationsView: View {
                             Image(systemName: "mappin.circle.fill")
                                 .foregroundColor(.blue)
                             Text(location.name)
-                                .font(.body)
                             Spacer()
                         }
                         .padding(.vertical, 8)
                     }
                 }
                 .navigationTitle("Locations")
+                .onAppear {
+                    if locations.isEmpty {
+                        loadLocations()
+                    }
+                }
             }
         }
     }
 
-    private func loadInitialForLocation(_ location: Location) {
-        loadMoreForLocation()
+    private func loadLocations() {
+        apiClient.fetchLocations { newLocations, error in
+            if let error = error {
+                alertMessage = error.localizedDescription
+                showingAlert = true
+                return
+            }
+            locations = newLocations ?? []
+        }
     }
 
     private func loadMoreForLocation() {
-        guard !isLoading else { return }
+        guard !isLoading, hasMore else { return }
         isLoading = true
-        apiClient.fetchEquipmentsByLocation(selectedLocation?.name ?? "", page: equipments.count / 10 + 1) { newEquipments, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                if let error = error {
-                    alertMessage = error.localizedDescription
-                    showingAlert = true
-                    return
-                }
-                equipments.append(contentsOf: newEquipments ?? [])
+        apiClient.fetchEquipmentsByLocation(selectedLocation?.name ?? "", page: currentPage) { response, error in
+            isLoading = false
+            if let error = error {
+                alertMessage = error.localizedDescription
+                showingAlert = true
+                return
             }
-        }
-    }
-}
-
-struct EquipmentListView: View {
-    let equipments: [Equipment]
-    let isLoggedIn: Bool
-    let location: String
-    let onLoadMore: () -> Void
-    @State private var isLoading = false // Local state for this view
-
-    var body: some View {
-        List {
-            LazyVStack(spacing: 0) {
-                ForEach(equipments) { equipment in
-                    NavigationLink(destination: EquipmentDetailView(equipment: equipment, isLoggedIn: isLoggedIn)) {
-                        EquipmentRow(equipment: equipment) // Assume EquipmentRow defined elsewhere or add here
-                    }
-                }
-                if isLoading {
-                    ProgressView()
-                        .padding()
-                }
-            }
-        }
-        .onAppear {
-            if equipments.isEmpty {
-                onLoadMore()
+            if let response = response {
+                equipments.append(contentsOf: response.equipments)
+                let loaded = response.page * response.perPage
+                hasMore = loaded < response.total
+                currentPage += 1
+            } else {
+                hasMore = false
             }
         }
     }

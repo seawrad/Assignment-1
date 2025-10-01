@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Combine
 
 struct SearchView: View {
     @State private var searchText = ""
@@ -28,21 +27,25 @@ struct SearchView: View {
                     Spacer()
                 } else {
                     List {
-                        LazyVStack(spacing: 0) {
-                            ForEach(viewModel.results) { equipment in
-                                NavigationLink(destination: EquipmentDetailView(equipment: equipment, isLoggedIn: !APIClient.shared.token.isEmpty)) {
-                                    EquipmentRow(equipment: equipment)
+                        ForEach(viewModel.results) { equipment in
+                            NavigationLink(destination: EquipmentDetailView(equipment: equipment)) {
+                                EquipmentRow(equipment: equipment)
+                            }
+                        }
+                        if viewModel.hasMore {
+                            Color.clear
+                                .onAppear {
+                                    viewModel.loadMore(query: searchText)
                                 }
-                            }
-                            if viewModel.isLoading {
-                                ProgressView("Searching...")
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                            }
+                        }
+                        if viewModel.isLoading {
+                            ProgressView("Searching...")
+                                .frame(maxWidth: .infinity)
+                                .padding()
                         }
                     }
                     .refreshable {
-                        viewModel.loadMore(query: searchText)
+                        viewModel.performSearch(searchText)
                     }
                 }
             }
@@ -59,31 +62,34 @@ struct SearchView: View {
 class SearchViewModel: ObservableObject {
     @Published var results: [Equipment] = []
     @Published var isLoading = false
+    @Published var hasMore = true
     private var currentPage = 1
     private let apiClient = APIClient.shared
 
     func performSearch(_ query: String) {
         results = []
         currentPage = 1
+        hasMore = true
         loadMore(query: query)
     }
 
-    func loadMore(query: String = "") {
-        guard !isLoading, !query.isEmpty else { return }
+    func loadMore(query: String) {
+        guard !isLoading, hasMore, !query.isEmpty else { return }
         isLoading = true
-        apiClient.searchEquipments(query: query, page: currentPage) { [weak self] equipments, error in
+        apiClient.searchEquipments(query: query, page: currentPage) { [weak self] response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 if let error = error {
                     print("Error: \(error.localizedDescription)")
+                    return
                 }
-                if self?.currentPage == 1 {
-                    self?.results = equipments ?? []
-                } else {
-                    self?.results.append(contentsOf: equipments ?? [])
-                }
-                if !(equipments?.isEmpty ?? true) {
+                if let response = response {
+                    self?.results.append(contentsOf: response.equipments)
+                    let loaded = response.page * response.perPage
+                    self?.hasMore = loaded < response.total
                     self?.currentPage += 1
+                } else {
+                    self?.hasMore = false
                 }
             }
         }

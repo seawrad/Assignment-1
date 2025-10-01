@@ -12,6 +12,15 @@ struct EquipmentRow: View {
     
     var body: some View {
         HStack {
+            if let imageURL = equipment.image, let url = URL(string: imageURL) {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    ProgressView()
+                }
+                .frame(width: 50, height: 50)
+                .cornerRadius(8)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(equipment.name)
                     .font(.headline)
