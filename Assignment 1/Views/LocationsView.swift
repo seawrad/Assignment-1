@@ -30,7 +30,9 @@ struct LocationsView: View {
                     if hasMore {
                         Color.clear
                             .onAppear {
-                                loadMoreForLocation()
+                                Task {
+                                    await loadMoreForLocation()
+                                }
                             }
                     }
                     if isLoading {
@@ -54,16 +56,16 @@ struct LocationsView: View {
                     currentPage = 1
                     equipments = []
                     hasMore = true
-                    loadMoreForLocation()
+                    await loadMoreForLocation()
                 }
                 .alert("Error", isPresented: $showingAlert) {
                     Button("OK") { }
                 } message: {
                     Text(alertMessage)
                 }
-                .onAppear {
+                .task {
                     if equipments.isEmpty {
-                        loadMoreForLocation()
+                        await loadMoreForLocation()
                     }
                 }
             } else {
@@ -81,45 +83,38 @@ struct LocationsView: View {
                     }
                 }
                 .navigationTitle("Locations")
-                .onAppear {
+                .task {
                     if locations.isEmpty {
-                        loadLocations()
+                        await loadLocations()
                     }
                 }
             }
         }
     }
 
-    private func loadLocations() {
-        apiClient.fetchLocations { newLocations, error in
-            if let error = error {
-                alertMessage = error.localizedDescription
-                showingAlert = true
-                return
-            }
-            locations = newLocations ?? []
+    private func loadLocations() async {
+        do {
+            locations = try await apiClient.fetchLocations()
+        } catch {
+            alertMessage = error.localizedDescription
+            showingAlert = true
         }
     }
 
-    private func loadMoreForLocation() {
+    private func loadMoreForLocation() async {
         guard !isLoading, hasMore else { return }
         isLoading = true
-        apiClient.fetchEquipmentsByLocation(selectedLocation?.name ?? "", page: currentPage) { response, error in
-            isLoading = false
-            if let error = error {
-                alertMessage = error.localizedDescription
-                showingAlert = true
-                return
-            }
-            if let response = response {
-                equipments.append(contentsOf: response.equipments)
-                let loaded = response.page * response.perPage
-                hasMore = loaded < response.total
-                currentPage += 1
-            } else {
-                hasMore = false
-            }
+        do {
+            let response = try await apiClient.fetchEquipmentsByLocation(selectedLocation?.name ?? "", page: currentPage)
+            equipments.append(contentsOf: response.equipments)
+            let loaded = response.page * response.perPage
+            hasMore = loaded < response.total
+            currentPage += 1
+        } catch {
+            alertMessage = error.localizedDescription
+            showingAlert = true
         }
+        isLoading = false
     }
 }
 

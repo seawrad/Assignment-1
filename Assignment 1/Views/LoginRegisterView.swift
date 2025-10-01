@@ -39,16 +39,8 @@ struct LoginRegisterView: View {
             }
             
             Button(isRegister ? "Register" : "Login") {
-                isLoading = true
-                if isRegister {
-                    let request = RegisterRequest(name: name, email: email, password: password, department: department.isEmpty ? nil : department, remark: remark.isEmpty ? nil : remark)
-                    apiClient.register(user: request) { response, error in
-                        handleAuthResponse(response, error)
-                    }
-                } else {
-                    apiClient.login(email: email, password: password) { response, error in
-                        handleAuthResponse(response, error)
-                    }
+                Task {
+                    await performAuth()
                 }
             }
             .disabled(email.isEmpty || password.isEmpty || (isRegister && name.isEmpty))
@@ -72,17 +64,23 @@ struct LoginRegisterView: View {
         }
     }
     
-    private func handleAuthResponse(_ response: AuthResponse?, _ error: Error?) {
-        isLoading = false
-        if let error = error {
-            errorMessage = error.localizedDescription
-            showingError = true
-            return
-        }
-        if let response = response {
+    private func performAuth() async {
+        isLoading = true
+        do {
+            let response: AuthResponse
+            if isRegister {
+                let request = RegisterRequest(name: name, email: email, password: password, department: department.isEmpty ? nil : department, remark: remark.isEmpty ? nil : remark)
+                response = try await apiClient.register(user: request)
+            } else {
+                response = try await apiClient.login(email: email, password: password)
+            }
             onSuccess(response.user)
             isPresented = false
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
         }
+        isLoading = false
     }
 }
 

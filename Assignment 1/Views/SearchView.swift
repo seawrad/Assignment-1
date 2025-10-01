@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct SearchView: View {
     @State private var searchText = ""
@@ -16,8 +17,12 @@ struct SearchView: View {
     var body: some View {
         NavigationView {
             VStack {
-                SearchBar(text: $searchText, onSearch: viewModel.performSearch)
-                    .padding()
+                SearchBar(text: $searchText) { query in
+                    Task {
+                        await viewModel.performSearch(query)
+                    }
+                }
+                .padding()
 
                 if searchText.isEmpty {
                     Spacer()
@@ -35,7 +40,9 @@ struct SearchView: View {
                         if viewModel.hasMore {
                             Color.clear
                                 .onAppear {
-                                    viewModel.loadMore(query: searchText)
+                                    Task {
+                                        await viewModel.loadMore(query: searchText)
+                                    }
                                 }
                         }
                         if viewModel.isLoading {
@@ -45,7 +52,7 @@ struct SearchView: View {
                         }
                     }
                     .refreshable {
-                        viewModel.performSearch(searchText)
+                        await viewModel.performSearch(searchText)
                     }
                 }
             }
@@ -59,6 +66,7 @@ struct SearchView: View {
     }
 }
 
+@MainActor
 class SearchViewModel: ObservableObject {
     @Published var results: [Equipment] = []
     @Published var isLoading = false
@@ -66,33 +74,26 @@ class SearchViewModel: ObservableObject {
     private var currentPage = 1
     private let apiClient = APIClient.shared
 
-    func performSearch(_ query: String) {
+    func performSearch(_ query: String) async {
         results = []
         currentPage = 1
         hasMore = true
-        loadMore(query: query)
+        await loadMore(query: query)
     }
 
-    func loadMore(query: String) {
+    func loadMore(query: String) async {
         guard !isLoading, hasMore, !query.isEmpty else { return }
         isLoading = true
-        apiClient.searchEquipments(query: query, page: currentPage) { [weak self] response, error in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                if let error = error {
-                    print("Error: \(error.localizedDescription)")
-                    return
-                }
-                if let response = response {
-                    self?.results.append(contentsOf: response.equipments)
-                    let loaded = response.page * response.perPage
-                    self?.hasMore = loaded < response.total
-                    self?.currentPage += 1
-                } else {
-                    self?.hasMore = false
-                }
-            }
+        do {
+            let response = try await apiClient.searchEquipments(query: query, page: currentPage)
+            results.append(contentsOf: response.equipments)
+            let loaded = response.page * response.perPage
+            hasMore = loaded < response.total
+            currentPage += 1
+        } catch {
+            print("Error: \(error.localizedDescription)")
         }
+        isLoading = false
     }
 }
 

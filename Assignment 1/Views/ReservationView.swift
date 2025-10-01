@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct ReservationsView: View {
     @StateObject private var viewModel = ReservationsViewModel()
@@ -21,7 +22,9 @@ struct ReservationsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Button("Unreserve") {
-                        viewModel.unreserve(equipment)
+                        Task {
+                            await viewModel.unreserve(equipment)
+                        }
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
@@ -32,9 +35,11 @@ struct ReservationsView: View {
             if viewModel.hasMore {
                 Color.clear
                     .onAppear {
-                        viewModel.loadMore()
+                        Task {
+                            await viewModel.loadMore()
+                        }
                     }
-                }
+            }
             if viewModel.isLoading {
                 ProgressView("Loading more...")
                     .frame(maxWidth: .infinity)
@@ -42,15 +47,16 @@ struct ReservationsView: View {
             }
         }
         .refreshable {
-            viewModel.loadInitial()
+            await viewModel.loadInitial()
         }
         .navigationTitle("My Reservations")
-        .onAppear {
-            viewModel.loadInitial()
+        .task {
+            await viewModel.loadInitial()
         }
     }
 }
 
+@MainActor
 class ReservationsViewModel: ObservableObject {
     @Published var reservedEquipments: [Equipment] = []
     @Published var isLoading = false
@@ -58,48 +64,37 @@ class ReservationsViewModel: ObservableObject {
     private var currentPage = 1
     private let apiClient = APIClient.shared
     
-    func loadInitial() {
+    func loadInitial() async {
         currentPage = 1
         reservedEquipments = []
         hasMore = true
-        loadMore()
+        await loadMore()
     }
     
-    func loadMore() {
+    func loadMore() async {
         guard !isLoading, hasMore else { return }
         isLoading = true
-        apiClient.fetchUserReservedEquipments(page: currentPage) { [weak self] response, error in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                if let error = error {
-                    print("Error: \(error.localizedDescription)")
-                    return
-                }
-                if let response = response {
-                    self?.reservedEquipments.append(contentsOf: response.equipments)
-                    let loaded = response.page * response.perPage
-                    self?.hasMore = loaded < response.total
-                    self?.currentPage += 1
-                } else {
-                    self?.hasMore = false
-                }
-            }
+        do {
+            let response = try await apiClient.fetchUserReservedEquipments(page: currentPage)
+            reservedEquipments.append(contentsOf: response.equipments)
+            let loaded = response.page * response.perPage
+            hasMore = loaded < response.total
+            currentPage += 1
+        } catch {
+            print("Error: \(error.localizedDescription)")
         }
+        isLoading = false
     }
     
-    func unreserve(_ equipment: Equipment) {
+    func unreserve(_ equipment: Equipment) async {
         isLoading = true
-        apiClient.unreserveEquipment(equipmentId: equipment.id) { [weak self] success, error in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                if let error = error {
-                    print("Error: \(error.localizedDescription)")
-                }
-                if success {
-                    self?.reservedEquipments.removeAll { $0.id == equipment.id }
-                }
-            }
+        do {
+            try await apiClient.unreserveEquipment(equipmentId: equipment.id)
+            reservedEquipments.removeAll { $0.id == equipment.id }
+        } catch {
+            print("Error: \(error.localizedDescription)")
         }
+        isLoading = false
     }
 }
 

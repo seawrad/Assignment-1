@@ -52,12 +52,13 @@ struct SearchBar: View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.gray)
-            TextField("Search equipments...", text: $text, onCommit: {
-                if !text.isEmpty {
-                    onSearch(text)
+            TextField("Search equipments...", text: $text)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .onSubmit {
+                    if !text.isEmpty {
+                        onSearch(text)
+                    }
                 }
-            })
-            .textFieldStyle(RoundedBorderTextFieldStyle())
             if !text.isEmpty {
                 Button(action: { text = "" }) {
                     Image(systemName: "xmark.circle.fill")

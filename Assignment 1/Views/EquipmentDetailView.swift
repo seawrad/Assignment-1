@@ -61,7 +61,9 @@ struct EquipmentDetailView: View {
                 
                 if !apiClient.token.isEmpty {
                     Button(isReserved ? "Unreserve" : "Reserve") {
-                        toggleReserve()
+                        Task {
+                            await toggleReserve()
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isReserved ? .red : .green)
@@ -86,31 +88,23 @@ struct EquipmentDetailView: View {
         }
     }
     
-    private func toggleReserve() {
+    private func toggleReserve() async {
         isLoading = true
-        if isReserved {
-            apiClient.unreserveEquipment(equipmentId: equipment.id) { success, error in
-                handleToggle(success: success, error: error, action: "unreserve")
+        do {
+            if isReserved {
+                try await apiClient.unreserveEquipment(equipmentId: equipment.id)
+                alertMessage = "Successfully unreserved!"
+            } else {
+                try await apiClient.reserveEquipment(equipmentId: equipment.id)
+                alertMessage = "Successfully reserved!"
             }
-        } else {
-            apiClient.reserveEquipment(equipmentId: equipment.id) { success, error in
-                handleToggle(success: success, error: error, action: "reserve")
-            }
-        }
-    }
-    
-    private func handleToggle(success: Bool, error: Error?, action: String) {
-        isLoading = false
-        if let error = error {
-            alertMessage = "Failed to \(action): \(error.localizedDescription)"
-            showingAlert = true
-            return
-        }
-        if success {
             isReserved.toggle()
-            alertMessage = "Successfully \(action)d!"
+            showingAlert = true
+        } catch {
+            alertMessage = "Failed: \(error.localizedDescription)"
             showingAlert = true
         }
+        isLoading = false
     }
 }
 

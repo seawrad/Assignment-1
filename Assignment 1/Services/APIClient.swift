@@ -7,8 +7,9 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
-struct PaginatedResponse: Codable {
+struct PaginatedResponse: Codable, Sendable {
     let equipments: [Equipment]
     let total: Int
     let page: Int
@@ -34,95 +35,82 @@ class APIClient: ObservableObject {
         return request
     }
 
-    func fetchHighlightedEquipments(page: Int = 1, perPage: Int = 10, completion: @escaping (PaginatedResponse?, Error?) -> Void) {
+    func fetchHighlightedEquipments(page: Int = 1, perPage: Int = 10) async throws -> PaginatedResponse {
         let path = "/equipments?highlight=true&page=\(page)&perPage=\(perPage)"
-        performRequest(path: path, completion: completion)
+        return try await performRequest(path: path)
     }
 
-    func fetchEquipmentsByLocation(_ location: String, page: Int = 1, perPage: Int = 10, completion: @escaping (PaginatedResponse?, Error?) -> Void) {
+    func fetchEquipmentsByLocation(_ location: String, page: Int = 1, perPage: Int = 10) async throws -> PaginatedResponse {
         let path = "/equipments?location=\(location)&page=\(page)&perPage=\(perPage)"
-        performRequest(path: path, completion: completion)
+        return try await performRequest(path: path)
     }
 
-    func searchEquipments(query: String, page: Int = 1, perPage: Int = 10, completion: @escaping (PaginatedResponse?, Error?) -> Void) {
+    func searchEquipments(query: String, page: Int = 1, perPage: Int = 10) async throws -> PaginatedResponse {
         let path = "/equipments?q=\(query)&page=\(page)&perPage=\(perPage)"
-        performRequest(path: path, completion: completion)
+        return try await performRequest(path: path)
     }
 
-    func fetchUserReservedEquipments(page: Int = 1, perPage: Int = 10, completion: @escaping (PaginatedResponse?, Error?) -> Void) {
+    func fetchUserReservedEquipments(page: Int = 1, perPage: Int = 10) async throws -> PaginatedResponse {
         let path = "/equipments?rentedByMe=true&page=\(page)&perPage=\(perPage)"
-        performRequest(path: path) { response, error in
-            if let response = response {
-                let ids = response.equipments.map { $0.id }
-                self.reservedIds.formUnion(ids)
-            }
-            completion(response, error)
-        }
+        let response = try await performRequest(path: path)
+        let ids = response.equipments.map { $0.id }
+        reservedIds.formUnion(ids)
+        return response
     }
 
-    private func performRequest(path: String, completion: @escaping (PaginatedResponse?, Error?) -> Void) {
-        guard let request = createURLRequest(path: path) else { return }
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let error = error { completion(nil, error); return }
-            guard let data = data else { completion(nil, NSError(domain: "NoData", code: 0)); return }
-            let response = try? JSONDecoder().decode(PaginatedResponse.self, from: data)
-            DispatchQueue.main.async { completion(response, nil) }
-        }.resume()
+    private func performRequest(path: String) async throws -> PaginatedResponse {
+        guard let request = createURLRequest(path: path) else { throw URLError(.badURL) }
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(PaginatedResponse.self, from: data)
     }
 
-    func fetchLocations(completion: @escaping ([Location]?, Error?) -> Void) {
+    func fetchLocations() async throws -> [Location] {
         let path = "/equipments?page=1&perPage=2000"  // High perPage to get all (~1013 total)
-        performRequest(path: path) { response, error in
-            if let error = error { completion(nil, error); return }
-            let uniqueNames = Set(response?.equipments.map { $0.location } ?? [])
-            let locations = uniqueNames.sorted().map { Location(name: $0) }
-            completion(locations, nil)
+        let response = try await performRequest(path: path)
+        let uniqueNames = Set(response.equipments.map { $0.location })
+        return uniqueNames.sorted().map { Location(name: $0) }
+    }
+
+    func login(email: String, password: String) async throws -> AuthResponse {
+        let body = try JSONEncoder().encode(LoginRequest(email: email, password: password))
+        guard let request = createURLRequest(path: "/login", method: "POST", body: body) else { throw URLError(.badURL) }
+        return try await performAuthRequest(request: request)
+    }
+
+    func register(user: RegisterRequest) async throws -> AuthResponse {
+        let body = try JSONEncoder().encode(user)
+        guard let request = createURLRequest(path: "/users", method: "POST", body: body) else { throw URLError(.badURL) }
+        return try await performAuthRequest(request: request)
+    }
+
+    private func performAuthRequest(request: URLRequest) async throws -> AuthResponse {
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(AuthResponse.self, from: data)
+        token = response.token
+        _ = try await fetchUserReservedEquipments(page: 1, perPage: 1000)  // Fetch all reserved to populate IDs
+        return response
+    }
+
+    func reserveEquipment(equipmentId: String) async throws {
+        let path = "/equipments/\(equipmentId)/rent"
+        guard let request = createURLRequest(path: path, method: "POST") else { throw URLError(.badURL) }
+        let (_, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 {
+            reservedIds.insert(equipmentId)
+        } else {
+            throw URLError(.badServerResponse)
         }
     }
 
-    func login(email: String, password: String, completion: @escaping (AuthResponse?, Error?) -> Void) {
-        let body = try? JSONEncoder().encode(LoginRequest(email: email, password: password))
-        guard let request = createURLRequest(path: "/login", method: "POST", body: body) else { return }
-        performAuthRequest(request: request, completion: completion)
-    }
-
-    func register(user: RegisterRequest, completion: @escaping (AuthResponse?, Error?) -> Void) {
-        let body = try? JSONEncoder().encode(user)
-        guard let request = createURLRequest(path: "/users", method: "POST", body: body) else { return }
-        performAuthRequest(request: request, completion: completion)
-    }
-
-    private func performAuthRequest(request: URLRequest, completion: @escaping (AuthResponse?, Error?) -> Void) {
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let error = error { completion(nil, error); return }
-            guard let data = data else { completion(nil, NSError(domain: "NoData", code: 0)); return }
-            let response = try? JSONDecoder().decode(AuthResponse.self, from: data)
-            if let response = response {
-                self.token = response.token
-                self.fetchUserReservedEquipments { _, _ in }  // Initial fetch for reservedIds
-            }
-            DispatchQueue.main.async { completion(response, nil) }
-        }.resume()
-    }
-
-    func reserveEquipment(equipmentId: String, completion: @escaping (Bool, Error?) -> Void) {
+    func unreserveEquipment(equipmentId: String) async throws {
         let path = "/equipments/\(equipmentId)/rent"
-        guard let request = createURLRequest(path: path, method: "POST") else { return }
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            let success = (response as? HTTPURLResponse)?.statusCode == 201
-            if success { self.reservedIds.insert(equipmentId) }
-            DispatchQueue.main.async { completion(success, error) }
-        }.resume()
-    }
-
-    func unreserveEquipment(equipmentId: String, completion: @escaping (Bool, Error?) -> Void) {
-        let path = "/equipments/\(equipmentId)/rent"
-        guard let request = createURLRequest(path: path, method: "DELETE") else { return }
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            let success = (response as? HTTPURLResponse)?.statusCode == 200
-            if success { self.reservedIds.remove(equipmentId) }
-            DispatchQueue.main.async { completion(success, error) }
-        }.resume()
+        guard let request = createURLRequest(path: path, method: "DELETE") else { throw URLError(.badURL) }
+        let (_, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+            reservedIds.remove(equipmentId)
+        } else {
+            throw URLError(.badServerResponse)
+        }
     }
 
     func logout() {
@@ -130,6 +118,3 @@ class APIClient: ObservableObject {
         reservedIds = []
     }
 }
-
-extension AuthResponse: Sendable {}
-extension Equipment: Sendable {}

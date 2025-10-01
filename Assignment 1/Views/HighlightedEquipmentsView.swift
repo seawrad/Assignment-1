@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct HighlightedEquipmentsView: View {
     @StateObject private var viewModel = EquipmentListViewModel(fetchFunction: APIClient.shared.fetchHighlightedEquipments)
@@ -23,7 +24,9 @@ struct HighlightedEquipmentsView: View {
                 if viewModel.hasMore {
                     Color.clear
                         .onAppear {
-                            viewModel.loadMore()
+                            Task {
+                                await viewModel.loadMore()
+                            }
                         }
                 }
                 if viewModel.isLoading {
@@ -33,7 +36,7 @@ struct HighlightedEquipmentsView: View {
                 }
             }
             .refreshable {
-                viewModel.loadInitial()
+                await viewModel.loadInitial()
             }
             .navigationTitle("Highlighted Equipments")
             .alert("Error", isPresented: $showingAlert) {
@@ -42,50 +45,46 @@ struct HighlightedEquipmentsView: View {
                 Text(alertMessage)
             }
             .onAppear {
-                viewModel.loadInitial()
+                Task {
+                    await viewModel.loadInitial()
+                }
             }
         }
     }
 }
 
+@MainActor
 class EquipmentListViewModel: ObservableObject {
     @Published var equipments: [Equipment] = []
     @Published var isLoading = false
     @Published var hasMore = true
     private var currentPage = 1
-    let fetchFunction: (Int, Int, @escaping (PaginatedResponse?, Error?) -> Void) -> Void
+    let fetchFunction: (Int, Int) async throws -> PaginatedResponse
 
-    init(fetchFunction: @escaping (Int, Int, @escaping (PaginatedResponse?, Error?) -> Void) -> Void) {
+    init(fetchFunction: @escaping (Int, Int) async throws -> PaginatedResponse) {
         self.fetchFunction = fetchFunction
     }
 
-    func loadInitial() {
+    func loadInitial() async {
         currentPage = 1
         equipments = []
         hasMore = true
-        loadMore()
+        await loadMore()
     }
 
-    func loadMore() {
+    func loadMore() async {
         guard !isLoading, hasMore else { return }
         isLoading = true
-        fetchFunction(currentPage, 10) { [weak self] response, error in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                if let error = error {
-                    print("Error: \(error.localizedDescription)")
-                    return
-                }
-                if let response = response {
-                    self?.equipments.append(contentsOf: response.equipments)
-                    let loaded = response.page * response.perPage
-                    self?.hasMore = loaded < response.total
-                    self?.currentPage += 1
-                } else {
-                    self?.hasMore = false
-                }
-            }
+        do {
+            let response = try await fetchFunction(currentPage, 10)
+            equipments.append(contentsOf: response.equipments)
+            let loaded = response.page * response.perPage
+            hasMore = loaded < response.total
+            currentPage += 1
+        } catch {
+            print("Error: \(error.localizedDescription)")
         }
+        isLoading = false
     }
 }
 
