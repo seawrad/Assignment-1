@@ -8,9 +8,9 @@
 import Foundation
 
 struct User: Codable {
-    let id: Int
-    let name: String
-    let email: String
+    let id: String?
+    let name: String?
+    let email: String?
     let department: String?
     let remark: String?
 }
@@ -29,6 +29,7 @@ struct RegisterRequest: Codable {
 }
 
 struct AuthResponse: Codable {
-    let token: String
-    let user: User
+    let token: String?
+    let user: User?
+    let message: String? 
 }

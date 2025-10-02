@@ -11,7 +11,7 @@ struct Equipment: Identifiable, Codable {
     let id: String
     let name: String
     let description: String
-    let location: String
+    let location: String?
     let createdAt: String
     let modifiedAt: String
     let image: String?

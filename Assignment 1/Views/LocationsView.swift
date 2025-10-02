@@ -16,6 +16,7 @@ struct LocationsView: View {
     @State private var isLoading = false
     @State private var showingAlert = false
     @State private var alertMessage = ""
+    @State private var isLoadingLocations = false
     private let apiClient = APIClient.shared
 
     var body: some View {
@@ -69,36 +70,46 @@ struct LocationsView: View {
                     }
                 }
             } else {
-                List(locations) { location in
-                    Button(action: {
-                        selectedLocation = location
-                    }) {
-                        HStack {
-                            Image(systemName: "mappin.circle.fill")
-                                .foregroundColor(.blue)
-                            Text(location.name)
-                            Spacer()
+                Group {
+                    if isLoadingLocations {
+                        ProgressView("Loading locations...")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if locations.isEmpty {
+                        Text("No locations available")
+                            .foregroundColor(.secondary)
+                    } else {
+                        List(locations) { location in
+                            Button(action: {
+                                selectedLocation = location
+                            }) {
+                                HStack {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .foregroundColor(.blue)
+                                    Text(location.name)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 8)
+                            }
                         }
-                        .padding(.vertical, 8)
                     }
                 }
                 .navigationTitle("Locations")
-                .task {
-                    if locations.isEmpty {
-                        await loadLocations()
-                    }
+                .task { @Sendable in
+                    await loadLocations()
                 }
             }
         }
     }
 
     private func loadLocations() async {
+        isLoadingLocations = true
         do {
             locations = try await apiClient.fetchLocations()
         } catch {
             alertMessage = error.localizedDescription
             showingAlert = true
         }
+        isLoadingLocations = false
     }
 
     private func loadMoreForLocation() async {

@@ -8,6 +8,6 @@
 import Foundation
 
 struct Location: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { name }
     let name: String
 }

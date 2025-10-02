@@ -38,7 +38,7 @@ struct EquipmentDetailView: View {
                 HStack {
                     Label("Location", systemImage: "mappin")
                     Spacer()
-                    Text(equipment.location)
+                    Text(equipment.location ?? "Unknown")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

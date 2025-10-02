@@ -67,14 +67,15 @@ struct LoginRegisterView: View {
     private func performAuth() async {
         isLoading = true
         do {
-            let response: AuthResponse
+            var response: AuthResponse
             if isRegister {
                 let request = RegisterRequest(name: name, email: email, password: password, department: department.isEmpty ? nil : department, remark: remark.isEmpty ? nil : remark)
                 response = try await apiClient.register(user: request)
             } else {
                 response = try await apiClient.login(email: email, password: password)
             }
-            onSuccess(response.user)
+            let user = response.user ?? User(id: nil, name: name, email: email, department: department, remark: remark)
+            onSuccess(user)
             isPresented = false
         } catch {
             errorMessage = error.localizedDescription

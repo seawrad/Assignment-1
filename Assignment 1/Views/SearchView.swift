@@ -86,7 +86,10 @@ class SearchViewModel: ObservableObject {
         isLoading = true
         do {
             let response = try await apiClient.searchEquipments(query: query, page: currentPage)
-            results.append(contentsOf: response.equipments)
+            var newResults = response.equipments
+            // Local sorting for better relevance: sort by name containing query
+            newResults.sort { $0.name.lowercased().contains(query.lowercased()) && !$1.name.lowercased().contains(query.lowercased()) }
+            results.append(contentsOf: newResults)
             let loaded = response.page * response.perPage
             hasMore = loaded < response.total
             currentPage += 1
